@@ -4,15 +4,24 @@
 
 enum symbol_state_t {
     SYMBOL_UNASSIGNED,
-    SYMBOL_ASSIGNED
+    SYMBOL_ASSIGNED,
+    SYMBOL_SOLVED
 };
 
-struct symbol_t {
-    bool is_negative;
+struct symbol_definition_t {
     uint64_t id;
+    string_t name; // rename is not allowed!
 
     enum symbol_state_t state;
     double value;
+};
+
+BINARY_TREE_NEW(id_to_symbol_definition, uint64_t, struct symbol_definition_t*, a <= b ? (a == b ? 0 : -1) : 1)
+BINARY_TREE_NEW(name_to_symbol_definition, char*, struct symbol_definition_t*, strcmp(a,b))
+
+struct symbol_t {
+    bool is_negative;
+    struct symbol_definition_t *definition;
 
     struct symbol_t *next;
 };
@@ -25,6 +34,9 @@ struct expression_t {
 
 struct linear_system_t {
     mem_pool_t pool;
+    struct id_to_symbol_definition_tree_t id_to_symbol_definition;
+    struct name_to_symbol_definition_tree_t name_to_symbol_definition;
+
     uint64_t last_id;
     struct expression_t *expressions;
 
@@ -66,6 +78,31 @@ void solver_parser_state_init (struct solver_parser_state_t *state, char *expr)
     state->scnr.pos = expr;
 }
 
+struct symbol_t* system_new_symbol (struct linear_system_t *system, bool is_negative, char *name)
+{
+    struct symbol_definition_t *symbol_definition =
+        name_to_symbol_definition_get (&system->name_to_symbol_definition, name);
+    if (symbol_definition == NULL) {
+        symbol_definition = mem_pool_push_struct (&system->pool, struct symbol_definition_t);
+        *symbol_definition = ZERO_INIT (struct symbol_definition_t);
+
+        symbol_definition->id = system->last_id;
+        system->last_id++;
+        str_set (&symbol_definition->name, name);
+
+        id_to_symbol_definition_tree_insert (&system->id_to_symbol_definition,
+                                             symbol_definition->id, symbol_definition);
+        name_to_symbol_definition_tree_insert (&system->name_to_symbol_definition,
+                                               str_data(&symbol_definition->name), symbol_definition);
+    }
+
+    struct symbol_t *new_symbol =
+        mem_pool_push_struct (&system->pool, struct symbol_t);
+    new_symbol->definition = symbol_definition;
+
+    return new_symbol;
+}
+
 // Shorthand error for when the only replacement is the value of a token.
 #define solver_read_error_tok(state,format) solver_read_error(state,format,str_data(&(state)->str))
 GCC_PRINTF_FORMAT(2, 3)
@@ -85,7 +122,7 @@ void solver_tokenizer_next (struct solver_parser_state_t *state)
 
     scnr->eof_is_error = true;
 
-    char *identifier_chars = ".abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    char *identifier_chars = "._-abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
     // Reset the token
     str_set (&state->str, "");
@@ -165,11 +202,8 @@ void solver_expression_push_symbol (struct linear_system_t *system,
                                     bool is_negative, char *identifier)
 {
     // TODO: Have a symbol identifier to ID map
-    struct symbol_t *new_symbol = mem_pool_push_struct (&system->pool, struct symbol_t);
-    new_symbol->is_negative = is_negative;
-    new_symbol->id = system->last_id;
+    struct symbol_t *new_symbol = system_new_symbol (system, is_negative, identifier);
     LINKED_LIST_PUSH (expression->symbols, new_symbol);
-    system->last_id++;
 }
 
 void solver_expr_equals_zero (struct linear_system_t *system, char *expr)
@@ -213,11 +247,10 @@ void solver_expr_equals_zero (struct linear_system_t *system, char *expr)
 
 void solver_symbol_assign (struct linear_system_t *system, char *identifier, double value)
 {
-}
-
-char* solver_symbol_name (struct linear_system_t *system, uint64_t id)
-{
-    return NULL;
+    struct symbol_definition_t *symbol_definition =
+        name_to_symbol_definition_get (&system->name_to_symbol_definition, identifier);
+    symbol_definition->state = SYMBOL_ASSIGNED;
+    symbol_definition->value = value;
 }
 
 bool solver_solve (struct linear_system_t *system, string_t *error)

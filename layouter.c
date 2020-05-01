@@ -5,6 +5,7 @@
 #define _GNU_SOURCE // Used to enable strcasestr()
 #define _XOPEN_SOURCE 700 // Required for strptime()
 #include "common.h"
+#include "binary_tree.c"
 #include "scanner.c"
 #include "color.h"
 
@@ -71,29 +72,29 @@ void add_rectangle (struct app_t *app, dvec2 pos, dvec2 size)
 
 int main (int argc, char **argv)
 {
-    struct app_t app = {0};
-    gtk_init (&argc, &argv);
+    //struct app_t app = {0};
+    //gtk_init (&argc, &argv);
 
-    BOX_POS_SIZE(app.screen, DVEC2(0,0),DVEC2(800, 700));
+    //BOX_POS_SIZE(app.screen, DVEC2(0,0),DVEC2(800, 700));
 
-    GtkWidget *window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
-    gtk_window_resize (GTK_WINDOW(window), BOX_WIDTH(app.screen), BOX_HEIGHT(app.screen));
-    g_signal_connect (G_OBJECT(window), "delete-event", G_CALLBACK(window_delete_handler), NULL);
+    //GtkWidget *window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
+    //gtk_window_resize (GTK_WINDOW(window), BOX_WIDTH(app.screen), BOX_HEIGHT(app.screen));
+    //g_signal_connect (G_OBJECT(window), "delete-event", G_CALLBACK(window_delete_handler), NULL);
 
-    GtkWidget *drawing_area = gtk_drawing_area_new ();
-    g_signal_connect (G_OBJECT (drawing_area), "draw", G_CALLBACK (draw_cb), &app);
+    //GtkWidget *drawing_area = gtk_drawing_area_new ();
+    //g_signal_connect (G_OBJECT (drawing_area), "draw", G_CALLBACK (draw_cb), &app);
 
-    gtk_container_add (GTK_CONTAINER(window), drawing_area);
-    gtk_widget_show_all (window);
+    //gtk_container_add (GTK_CONTAINER(window), drawing_area);
+    //gtk_widget_show_all (window);
 
 
-    app.background_color = RGB(0.164, 0.203, 0.223);
-    get_next_color (&app.rectangle_color);
-    add_rectangle (&app, DVEC2(0,0), DVEC2(10, INFINITE_LEN));
+    //app.background_color = RGB(0.164, 0.203, 0.223);
+    //get_next_color (&app.rectangle_color);
+    //add_rectangle (&app, DVEC2(0,0), DVEC2(10, INFINITE_LEN));
 
-    gtk_main();
+    //gtk_main();
 
-    mem_pool_destroy (&app.pool);
+    //mem_pool_destroy (&app.pool);
 
     struct linear_system_t system = {0};
     solver_expr_equals_zero (&system, "rectangle_1.min.x + rectangle_1.width - rectangle_1.max.x");
@@ -106,9 +107,25 @@ int main (int argc, char **argv)
 
     string_t error = {0};
     if (solver_solve (&system, &error)) {
-        struct symbol_t *curr_symbol = system.solution;
-        while (curr_symbol != NULL) {
-            printf ("%s = %.2f\n", solver_symbol_name(&system, curr_symbol->id), curr_symbol->value);
+        {
+            printf ("Assigned:\n");
+            BINARY_TREE_FOR (name_to_symbol_definition, &system.name_to_symbol_definition, curr_node) {
+                struct symbol_definition_t *symbol_definition = curr_node->value;
+                if (curr_node->value->state == SYMBOL_ASSIGNED) {
+                    printf ("%s = %.2f\n", str_data(&symbol_definition->name), symbol_definition->value);
+                }
+            }
+            printf ("\n");
+        }
+
+        {
+            printf ("Solved:\n");
+            BINARY_TREE_FOR (name_to_symbol_definition, &system.name_to_symbol_definition, curr_node) {
+                struct symbol_definition_t *symbol_definition = curr_node->value;
+                if (curr_node->value->state == SYMBOL_SOLVED) {
+                    printf ("%s = %.2f\n", str_data(&symbol_definition->name), symbol_definition->value);
+                }
+            }
         }
     } else {
         printf ("%s\n", str_data(&error));
