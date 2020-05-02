@@ -99,6 +99,7 @@ struct symbol_t* system_new_symbol (struct linear_system_t *system, bool is_nega
     struct symbol_t *new_symbol =
         mem_pool_push_struct (&system->pool, struct symbol_t);
     new_symbol->definition = symbol_definition;
+    new_symbol->is_negative = is_negative;
 
     return new_symbol;
 }
@@ -253,7 +254,224 @@ void solver_symbol_assign (struct linear_system_t *system, char *identifier, dou
     symbol_definition->value = value;
 }
 
+void str_cat_matrix (string_t *str, double *matrix, size_t m, size_t n)
+{
+    for (int i=0; i<m; i++) {
+        for (int j=0; j<n; j++) {
+            if (j == n-1) {
+                str_cat_c (str, "| ");
+            }
+
+            str_cat_printf (str, "%.2f ", matrix[n*i+j]);
+        }
+        str_cat_c (str, "\n");
+    }
+    str_cat_c (str, "\n");
+}
+
+void print_matrix (double *matrix, size_t m, size_t n)
+{
+    string_t str = {0};
+    str_cat_matrix (&str, matrix, m, n);
+    printf ("%s", str_data(&str));
+    str_free (&str);
+}
+
+uint32_t system_num_symbols (struct linear_system_t *system)
+{
+    return system->id_to_symbol_definition.num_nodes;
+}
+
+uint32_t system_num_equations (struct linear_system_t *system)
+{
+    uint32_t num_equations = 0;
+    struct expression_t *curr_expression = system->expressions;
+    while (curr_expression != NULL) {
+        num_equations++;
+        curr_expression = curr_expression->next;
+    }
+
+    return num_equations;
+}
+
 bool solver_solve (struct linear_system_t *system, string_t *error)
 {
-    return false;
+    bool success = true;
+
+    uint64_t symbol_id_to_column[system->last_id];
+    uint64_t column_to_symbol_id[system->last_id];
+    int num_unassigned_symbols = 0;
+    BINARY_TREE_FOR (name_to_symbol_definition, &system->name_to_symbol_definition, curr_node) {
+        struct symbol_definition_t *symbol_definition = curr_node->value;
+        if (symbol_definition->state == SYMBOL_UNASSIGNED) {
+            symbol_id_to_column[symbol_definition->id] = num_unassigned_symbols;
+            column_to_symbol_id[num_unassigned_symbols] = symbol_definition->id;
+            num_unassigned_symbols++;
+        }
+    }
+
+    uint32_t num_equations = system_num_equations (system);
+
+    {
+        // Create the matrix
+        size_t m = num_equations;
+        size_t n = num_unassigned_symbols+1;
+        double *augmented_matrix = mem_pool_push_array(&system->pool, m*n, double);
+
+        // Populate the matrix with the data from the parsed expressions
+        int expression_idx = 0;
+        struct expression_t *curr_expression = system->expressions;
+        while (curr_expression != NULL) {
+            double constant = 0;
+
+            struct symbol_t *curr_symbol = curr_expression->symbols;
+            while (curr_symbol != NULL) {
+                if (curr_symbol->definition->state == SYMBOL_ASSIGNED) {
+                    if (curr_symbol->is_negative) {
+                        constant -= curr_symbol->definition->value;
+                    } else {
+                        constant += curr_symbol->definition->value;
+                    }
+
+                } else {
+                    if (curr_symbol->is_negative) {
+                        augmented_matrix[n*expression_idx + symbol_id_to_column[curr_symbol->definition->id]] = -1;
+                    } else {
+                        augmented_matrix[n*expression_idx + symbol_id_to_column[curr_symbol->definition->id]] = 1;
+                    }
+                }
+
+                curr_symbol = curr_symbol->next;
+            }
+
+            augmented_matrix[n*expression_idx+num_unassigned_symbols] = -constant;
+
+            expression_idx++;
+            curr_expression = curr_expression->next;
+        }
+
+        // Compute row echelon form of the matrix
+        {
+            // Pivot indices
+            size_t h = 0;
+            size_t k = 0;
+
+            while (h<(m-1) && k<n) {
+                // Find the row with the leading coefficient of maximum absolute
+                // value.
+                size_t m_i = 0; // Index where the maximum value was found
+                double maximum = 0;
+                {
+                    for (int i=h; i<m; i++) {
+                        if (fabs(augmented_matrix[n*i+k]) > maximum) {
+                            maximum = fabs(augmented_matrix[n*i+k]);
+                            m_i = i;
+                        }
+                    }
+                }
+
+                if (maximum == 0) {
+                    k++;
+
+                } else {
+                    // Swap the found row into row h.
+                    for (int j=0; j<n; j++) {
+                        double tmp = augmented_matrix[n*m_i+j];
+                        augmented_matrix[n*m_i+j] = augmented_matrix[n*h+j];
+                        augmented_matrix[n*h+j] = tmp;
+                    }
+
+                    // Operate all expressions below pivot to make 0 the k column
+                    for (int i=h+1; i<m; i++) {
+                        double c = augmented_matrix[n*i+k]/augmented_matrix[n*h+k];
+                        augmented_matrix[n*i+k] = 0;
+                        for (int j=k+1; j<n; j++) {
+                            augmented_matrix[n*i+j] -= augmented_matrix[n*h+j]*c;
+                        }
+                    }
+
+                    // Go to next pivot
+                    h++;
+                    k++;
+                }
+            }
+        }
+
+        // Perform back substitution
+        {
+            int h = m-1;
+            int k = n-2;
+            while (h>=0 && n>=0) {
+                if (augmented_matrix[n*h+k] == 0) {
+                    k--;
+
+                } else {
+                    augmented_matrix[n*h+n-1] /= augmented_matrix[n*h+k];
+                    augmented_matrix[n*h+k] = 1;
+
+                    for (int i=h-1; i>=0; i--) {
+                        augmented_matrix[n*i+n-1] -= augmented_matrix[n*h+n-1]*augmented_matrix[n*i+k];
+                        augmented_matrix[n*i+k] = 0;
+                    }
+
+                    h--;
+                    k--;
+                }
+            }
+        }
+
+        // Copy result back into symbol definitions as a solution
+        for (int i=0; i<m; i++) {
+            int count = 0;
+            int col = -1;
+            for (int j=0; j<n-1; j++) {
+                if (augmented_matrix[n*i+j] != 0) {
+                    if (col == -1) {
+                        col = j;
+                    }
+                    count++;
+                }
+            }
+
+            // TODO: I'm sure some of these can't even happen, but I have to
+            // think which ones aren't possible.
+            if (count > 1) {
+                str_cat_printf (error, "Resulting expression (m=%d) has more than 1 variable\n", col);
+                success = false;
+
+            } else if (count == 0) {
+                str_cat_printf (error, "Resulting expression (m=%d) has no variable\n", col);
+                success = false;
+
+            } else if (augmented_matrix[n*i+col] != 1) {
+                str_cat_printf (error, "Resulting expression (m=%d) has variable with factor different than 1\n", col);
+                success = false;
+
+            } else {
+                struct symbol_definition_t *symbol_definition =
+                    id_to_symbol_definition_get (&system->id_to_symbol_definition, column_to_symbol_id[col]);
+                symbol_definition->value = augmented_matrix[n*i + n-1];
+                symbol_definition->state = SYMBOL_SOLVED;
+            }
+        }
+
+        if (!success) {
+            str_cat_c (error, "\n");
+            str_cat_matrix (error, augmented_matrix, m, n);
+        }
+
+    }
+
+    // Check that all symbols are either assigned or solved
+    {
+        BINARY_TREE_FOR (name_to_symbol_definition, &system->name_to_symbol_definition, curr_node) {
+            struct symbol_definition_t *symbol_definition = curr_node->value;
+            if (symbol_definition->state == SYMBOL_UNASSIGNED) {
+                str_cat_printf (error, "Unsolved symbol '%s'\n", str_data(&symbol_definition->name));
+                success = false;
+            }
+        }
+    }
+
+    return success;
 }

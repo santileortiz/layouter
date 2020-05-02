@@ -106,29 +106,39 @@ int main (int argc, char **argv)
     solver_symbol_assign (&system, "rectangle_1.height", 20);
 
     string_t error = {0};
-    if (solver_solve (&system, &error)) {
-        {
-            printf ("Assigned:\n");
-            BINARY_TREE_FOR (name_to_symbol_definition, &system.name_to_symbol_definition, curr_node) {
-                struct symbol_definition_t *symbol_definition = curr_node->value;
-                if (curr_node->value->state == SYMBOL_ASSIGNED) {
-                    printf ("%s = %.2f\n", str_data(&symbol_definition->name), symbol_definition->value);
-                }
+    bool success = solver_solve (&system, &error);
+    int num_unassigned_symbols = 0;
+    {
+        printf ("Assigned:\n");
+        BINARY_TREE_FOR (name_to_symbol_definition, &system.name_to_symbol_definition, curr_node) {
+            struct symbol_definition_t *symbol_definition = curr_node->value;
+            if (symbol_definition->state == SYMBOL_ASSIGNED) {
+                printf ("%s = %.2f\n", str_data(&symbol_definition->name), symbol_definition->value);
+            } else {
+                num_unassigned_symbols++;
             }
-            printf ("\n");
         }
+        printf ("\n");
+    }
 
-        {
-            printf ("Solved:\n");
-            BINARY_TREE_FOR (name_to_symbol_definition, &system.name_to_symbol_definition, curr_node) {
-                struct symbol_definition_t *symbol_definition = curr_node->value;
-                if (curr_node->value->state == SYMBOL_SOLVED) {
-                    printf ("%s = %.2f\n", str_data(&symbol_definition->name), symbol_definition->value);
-                }
+    {
+        printf ("Solved:\n");
+        BINARY_TREE_FOR (name_to_symbol_definition, &system.name_to_symbol_definition, curr_node) {
+            struct symbol_definition_t *symbol_definition = curr_node->value;
+            if (symbol_definition->state == SYMBOL_SOLVED) {
+                printf ("%s = %.2f\n", str_data(&symbol_definition->name), symbol_definition->value);
             }
         }
-    } else {
-        printf ("%s\n", str_data(&error));
+    }
+
+    printf ("\n");
+    printf ("Total symbols: %d\n", system_num_symbols (&system));
+    printf ("Symbols to solve: %d\n", num_unassigned_symbols);
+    printf ("Equations: %d\n", system_num_equations (&system));
+
+    if (!success) {
+        printf ("\n");
+        printf ("%s", str_data(&error));
     }
 
     return 0;
