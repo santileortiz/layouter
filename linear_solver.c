@@ -43,6 +43,11 @@ struct linear_system_t {
     struct symbol_t *solution;
 };
 
+void solver_destroy (struct linear_system_t *system)
+{
+    mem_pool_destroy (&system->pool);
+}
+
 #define SOLVER_TOKEN_TABLE                 \
     SOLVER_TOKEN_ROW(SOLVER_TOKEN_IDENTIFIER)  \
     SOLVER_TOKEN_ROW(SOLVER_TOKEN_OPERATOR)    \
@@ -316,6 +321,8 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
         // Create the matrix
         size_t m = num_equations;
         size_t n = num_unassigned_symbols+1;
+
+        mem_pool_marker_t mrkr = mem_pool_begin_temporary_memory (&system->pool);
         double *augmented_matrix = mem_pool_push_array(&system->pool, m*n, double);
 
         // Populate the matrix with the data from the parsed expressions
@@ -356,7 +363,9 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
             size_t h = 0;
             size_t k = 0;
 
-            while (h<(m-1) && k<n) {
+            //str_cat_matrix (error, augmented_matrix, m, n);
+
+            while (h<(m-1) && k<(n-1)) {
                 // Find the row with the leading coefficient of maximum absolute
                 // value.
                 size_t m_i = 0; // Index where the maximum value was found
@@ -394,13 +403,22 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
                     h++;
                     k++;
                 }
+
+                //str_cat_matrix (error, augmented_matrix, m, n);
             }
         }
 
         // Perform back substitution
         {
-            int h = m-1;
             int k = n-2;
+
+            // If there were linearly dependent equations in the beginning,
+            // these will show up as rows with all zeroes at the end. Make h
+            // start at the last non zero row.
+            int h = num_unassigned_symbols-1;
+
+            //str_cat_matrix (error, augmented_matrix, m, n);
+
             while (h>=0 && n>=0) {
                 if (augmented_matrix[n*h+k] == 0) {
                     k--;
@@ -417,11 +435,14 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
                     h--;
                     k--;
                 }
+
+                //str_cat_matrix (error, augmented_matrix, m, n);
             }
         }
 
         // Copy result back into symbol definitions as a solution
-        for (int i=0; i<m; i++) {
+        // NOTE: Only read the results of the first num_unassigned rows.
+        for (int i=0; i<num_unassigned_symbols; i++) {
             int count = 0;
             int col = -1;
             for (int j=0; j<n-1; j++) {
@@ -440,6 +461,9 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
                 success = false;
 
             } else if (count == 0) {
+                // I don't think this can happen because all linearly dependant
+                // equations are left as zeros rows at the end, we don't iterate
+                // over them.
                 str_cat_printf (error, "Resulting expression (m=%d) has no variable\n", col);
                 success = false;
 
@@ -455,11 +479,15 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
             }
         }
 
+        // TODO: Check that all rows left are full of 0's. Otherwise, I think it
+        // means the system was overdetermined.
+
         if (!success) {
             str_cat_c (error, "\n");
             str_cat_matrix (error, augmented_matrix, m, n);
         }
 
+        mem_pool_end_temporary_memory (mrkr);
     }
 
     // Check that all symbols are either assigned or solved

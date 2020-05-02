@@ -97,13 +97,38 @@ int main (int argc, char **argv)
     //mem_pool_destroy (&app.pool);
 
     struct linear_system_t system = {0};
+    // Rectangle 1
     solver_expr_equals_zero (&system, "rectangle_1.min.x + rectangle_1.width - rectangle_1.max.x");
     solver_expr_equals_zero (&system, "rectangle_1.min.y + rectangle_1.height - rectangle_1.max.y");
+
+    solver_expr_equals_zero (&system, "rectangle_1.min.x + rectangle_1.width - rectangle_1.a.x");
+    solver_expr_equals_zero (&system, "rectangle_1.min.y - rectangle_1.a.y");
+
+    solver_expr_equals_zero (&system, "rectangle_1.min.x - rectangle_1.c.x");
+    solver_expr_equals_zero (&system, "rectangle_1.min.y + rectangle_1.height - rectangle_1.c.y");
+
+    // Link
+    solver_expr_equals_zero (&system, "rectangle_1.min.x - rectangle_1.c.x");
+    solver_expr_equals_zero (&system, "rectangle_1.min.y + rectangle_1.height - rectangle_1.c.y");
+
+    solver_expr_equals_zero (&system, "rectangle_1.c.y + link_1.d_x - rectangle_2.min.x");
+    solver_expr_equals_zero (&system, "rectangle_1.c.x + link_1.d_y - rectangle_2.min.y");
+
+    // Rectangle 2
+    solver_expr_equals_zero (&system, "rectangle_2.min.x + rectangle_2.width - rectangle_2.max.x");
+    solver_expr_equals_zero (&system, "rectangle_2.min.y + rectangle_2.height - rectangle_2.max.y");
+
 
     solver_symbol_assign (&system, "rectangle_1.min.x", 10);
     solver_symbol_assign (&system, "rectangle_1.min.y", 10);
     solver_symbol_assign (&system, "rectangle_1.width", 90);
     solver_symbol_assign (&system, "rectangle_1.height", 20);
+
+    solver_symbol_assign (&system, "link_1.d_x", 10);
+    solver_symbol_assign (&system, "link_1.d_y", 15);
+
+    solver_symbol_assign (&system, "rectangle_2.width", 90);
+    solver_symbol_assign (&system, "rectangle_2.height", 20);
 
     string_t error = {0};
     bool success = solver_solve (&system, &error);
