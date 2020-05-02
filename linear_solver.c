@@ -45,10 +45,12 @@ struct linear_system_t {
 
 void solver_destroy (struct linear_system_t *system)
 {
+    id_to_symbol_definition_tree_destroy (&system->id_to_symbol_definition);
+    name_to_symbol_definition_tree_destroy (&system->name_to_symbol_definition);
     mem_pool_destroy (&system->pool);
 }
 
-#define SOLVER_TOKEN_TABLE                 \
+#define SOLVER_TOKEN_TABLE                     \
     SOLVER_TOKEN_ROW(SOLVER_TOKEN_IDENTIFIER)  \
     SOLVER_TOKEN_ROW(SOLVER_TOKEN_OPERATOR)    \
 
@@ -221,6 +223,7 @@ void solver_expr_equals_zero (struct linear_system_t *system, char *expr)
     bool is_negative = false;
 
     struct expression_t *new_expression = mem_pool_push_struct (&system->pool, struct expression_t);
+    *new_expression = ZERO_INIT (struct expression_t);
     LINKED_LIST_PUSH (system->expressions, new_expression)
 
     solver_tokenizer_next (state);
