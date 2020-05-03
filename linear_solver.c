@@ -320,7 +320,7 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
 
     uint32_t num_equations = system_num_equations (system);
 
-    {
+    if (num_unassigned_symbols > 0) {
         // Create the matrix
         size_t m = num_equations;
         size_t n = num_unassigned_symbols+1;
