@@ -253,6 +253,23 @@ void linked_rectangles_system (struct linear_system_t *system)
     solver_symbol_assign (system, "rectangle_1.min.y", 100);
 }
 
+void sample (struct app_t *app)
+{
+    uint64_t rectangle_1 = layout_rectangle_size (app, DVEC2(90, 20));
+    uint64_t rectangle_2 = layout_rectangle_size (app, DVEC2(90, 20));
+    layout_link_d (app, rectangle_1, "b", rectangle_2, "min", DVEC2(10, 15));
+
+    uint64_t rectangle_3 = layout_rectangle_size (app, DVEC2(90, 20));
+    uint64_t rectangle_4 = layout_rectangle_size (app, DVEC2(90, 20));
+    layout_link_d (app, rectangle_3, "b", rectangle_4, "min", DVEC2(10, 15));
+
+    uint64_t rectangle_5 = layout_rectangle_size (app, DVEC2(25, 20));
+    layout_link_d (app, rectangle_2, "d", rectangle_5, "min", DVEC2(10, 0));
+    layout_link_d (app, rectangle_5, "d", rectangle_4, "min", DVEC2(10, 0));
+
+    layout_fix (app, rectangle_1, "min", DVEC2(100, 100));
+}
+
 int main (int argc, char **argv)
 {
     struct app_t app = {0};
@@ -279,7 +296,7 @@ int main (int argc, char **argv)
 
     //mem_pool_destroy (&app.pool);
 
-    linked_rectangles (&app);
+    sample (&app);
     {
         string_t error = {0};
         bool success = solver_solve (&app.layout_system, &error);
