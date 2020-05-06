@@ -41,6 +41,7 @@ struct linear_system_t {
     struct expression_t *expressions;
 
     struct symbol_t *solution;
+    bool success;
 };
 
 void solver_destroy (struct linear_system_t *system)
@@ -302,6 +303,13 @@ uint32_t system_num_equations (struct linear_system_t *system)
     return num_equations;
 }
 
+double system_get_symbol_value (struct linear_system_t *system, char *name)
+{
+    struct symbol_definition_t *symbol_definition =
+        name_to_symbol_definition_get (&system->name_to_symbol_definition, name);
+    return symbol_definition->value;
+}
+
 bool solver_solve (struct linear_system_t *system, string_t *error)
 {
     bool success = true;
@@ -327,6 +335,7 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
 
         mem_pool_marker_t mrkr = mem_pool_begin_temporary_memory (&system->pool);
         double *augmented_matrix = mem_pool_push_array(&system->pool, m*n, double);
+        memset (augmented_matrix, 0, m*n*sizeof(double));
 
         // Populate the matrix with the data from the parsed expressions
         int expression_idx = 0;
@@ -503,6 +512,8 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
             }
         }
     }
+
+    system->success = success;
 
     return success;
 }

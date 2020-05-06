@@ -27,7 +27,7 @@ struct app_t {
 
     struct linear_system_t layout_system;
 
-    struct rectangle_t screen;
+    box_t screen;
 
     dvec4 background_color;
     dvec3 rectangle_color;
@@ -43,24 +43,38 @@ gboolean window_delete_handler (GtkWidget *widget, GdkEvent *event, gpointer use
 
 gboolean draw_cb (GtkWidget *widget, cairo_t *cr, gpointer user_data)
 {
-    //struct app_t *app = (struct app_t*)user_data;
+    struct app_t *app = (struct app_t*)user_data;
 
-    //cairo_set_source_rgb (cr, ARGS_RGB(app->background_color));
-    //cairo_paint (cr);
+    cairo_set_source_rgb (cr, ARGS_RGB(app->background_color));
+    cairo_paint (cr);
 
-    //cairo_set_source_rgb (cr, ARGS_RGB(app->rectangle_color));
+    cairo_set_source_rgb (cr, ARGS_RGB(app->rectangle_color));
 
-    //struct rectangle_t *curr_rectangle = app->rectangles;
-    //while (curr_rectangle != NULL) {
-    //    cairo_rectangle (cr, curr_rectangle->min.x, curr_rectangle->min.y,
-    //                     curr_rectangle->max.x - curr_rectangle->min.x, 
-    //                     curr_rectangle->max.y - curr_rectangle->min.y);
-    //    cairo_fill (cr);
+    if (app->layout_system.success) {
+        string_t buffer = {0};
+        struct rectangle_t *curr_rectangle = app->rectangles;
+        while (curr_rectangle != NULL) {
+            str_set_printf (&buffer, "%lu.min.x", curr_rectangle->id);
+            double x = system_get_symbol_value (&app->layout_system, str_data(&buffer));
 
-    //    curr_rectangle = curr_rectangle->next;
-    //}
+            str_set_printf (&buffer, "%lu.min.y", curr_rectangle->id);
+            double y = system_get_symbol_value (&app->layout_system, str_data(&buffer));
 
-    //gtk_widget_show_all (widget);
+            str_set_printf (&buffer, "%lu.width", curr_rectangle->id);
+            double width = system_get_symbol_value (&app->layout_system, str_data(&buffer));
+
+            str_set_printf (&buffer, "%lu.height", curr_rectangle->id);
+            double height = system_get_symbol_value (&app->layout_system, str_data(&buffer));
+
+            cairo_rectangle (cr, x, y, width, height);
+            cairo_fill (cr);
+
+            curr_rectangle = curr_rectangle->next;
+        }
+        str_free (&buffer);
+    }
+
+    gtk_widget_show_all (widget);
     return TRUE;
 }
 
@@ -273,55 +287,38 @@ void sample (struct app_t *app)
 int main (int argc, char **argv)
 {
     struct app_t app = {0};
-    //gtk_init (&argc, &argv);
+    gtk_init (&argc, &argv);
 
-    //BOX_POS_SIZE(app.screen, DVEC2(0,0),DVEC2(800, 700));
+    BOX_POS_SIZE(app.screen, DVEC2(0,0),DVEC2(800, 700));
 
-    //GtkWidget *window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
-    //gtk_window_resize (GTK_WINDOW(window), BOX_WIDTH(app.screen), BOX_HEIGHT(app.screen));
-    //g_signal_connect (G_OBJECT(window), "delete-event", G_CALLBACK(window_delete_handler), NULL);
+    GtkWidget *window = gtk_window_new (GTK_WINDOW_TOPLEVEL);
+    gtk_window_resize (GTK_WINDOW(window), BOX_WIDTH(app.screen), BOX_HEIGHT(app.screen));
+    g_signal_connect (G_OBJECT(window), "delete-event", G_CALLBACK(window_delete_handler), NULL);
 
-    //GtkWidget *drawing_area = gtk_drawing_area_new ();
-    //g_signal_connect (G_OBJECT (drawing_area), "draw", G_CALLBACK (draw_cb), &app);
+    GtkWidget *drawing_area = gtk_drawing_area_new ();
+    g_signal_connect (G_OBJECT (drawing_area), "draw", G_CALLBACK (draw_cb), &app);
 
-    //gtk_container_add (GTK_CONTAINER(window), drawing_area);
-    //gtk_widget_show_all (window);
+    gtk_container_add (GTK_CONTAINER(window), drawing_area);
+    gtk_widget_show_all (window);
 
-
-    //app.background_color = RGB(0.164, 0.203, 0.223);
-    //get_next_color (&app.rectangle_color);
-    //add_rectangle (&app, DVEC2(0,0), DVEC2(10, INFINITE_LEN));
-
-    //gtk_main();
-
-    //mem_pool_destroy (&app.pool);
+    app.background_color = RGB(0.164, 0.203, 0.223);
+    get_next_color (&app.rectangle_color);
 
     sample (&app);
-    {
-        string_t error = {0};
-        bool success = solver_solve (&app.layout_system, &error);
-        print_system_solution (&app.layout_system);
 
-        if (!success) {
-            printf ("\n");
-            printf ("%s", str_data(&error));
-        }
+    string_t error = {0};
+    bool success = solver_solve (&app.layout_system, &error);
+    print_system_solution (&app.layout_system);
+    if (!success) {
+        printf ("\n");
+        printf ("%s", str_data(&error));
     }
-    printf ("----------------------------------------------\n");
+    str_free (&error);
 
-    struct linear_system_t system = {0};
-    linked_rectangles_system (&system);
+    gtk_main();
 
-    {
-        string_t error = {0};
-        bool success = solver_solve (&system, &error);
-        print_system_solution (&system);
-
-        if (!success) {
-            printf ("\n");
-            printf ("%s", str_data(&error));
-        }
-    }
+    solver_destroy (&app.layout_system);
+    mem_pool_destroy (&app.pool);
 
     return 0;
 }
