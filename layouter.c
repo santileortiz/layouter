@@ -71,6 +71,17 @@ gboolean draw_cb (GtkWidget *widget, cairo_t *cr, gpointer user_data)
 
             curr_rectangle = curr_rectangle->next;
         }
+
+        // TODO: Draw links?
+
+        BINARY_TREE_FOR (name_to_symbol_definition, &app->layout_system.name_to_symbol_definition, curr_node) {
+            struct symbol_definition_t *symbol_definition = curr_node->value;
+            if (strncmp (str_data(&symbol_definition->name), "rectangle", sizeof("rectangle") == 0)) {
+                // TODO: parse id as rectangle
+            } else if (strncmp (str_data(&symbol_definition->name), "link", sizeof("link") == 0)) {
+                // TODO: parse id as link
+            }
+        }
         str_free (&buffer);
     }
 
