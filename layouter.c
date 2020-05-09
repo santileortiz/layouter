@@ -77,16 +77,17 @@ struct feature_t {
     enum axis_t axis;
 };
 
-struct rectangle_t {
+struct entity_t {
+    enum entity_type_t type;
     uint64_t id;
-    struct rectangle_t *next;
+    struct entity_t *next;
 };
 
 // This sets the passed string_t to be the name of the wvariable used in the
 // system of equations to represent the passed feature parameters. It's useful
 // to the user if they are adding equations that relate to layout entities.
 void str_set_feature_name (string_t *str,
-                           struct rectangle_t *entity,
+                           struct entity_t *entity,
                            enum feature_identifier_t feature_name,
                            enum axis_t axis)
 {
@@ -210,7 +211,7 @@ struct app_t {
     dvec4 background_color;
     dvec3 rectangle_color;
 
-    struct rectangle_t *rectangles;
+    struct entity_t *rectangles;
 };
 
 gboolean window_delete_handler (GtkWidget *widget, GdkEvent *event, gpointer user_data)
@@ -230,7 +231,7 @@ gboolean draw_cb (GtkWidget *widget, cairo_t *cr, gpointer user_data)
 
     if (app->layout_system.success) {
         string_t buffer = {0};
-        struct rectangle_t *curr_rectangle = app->rectangles;
+        struct entity_t *curr_rectangle = app->rectangles;
         while (curr_rectangle != NULL) {
             str_set_feature_name (&buffer, curr_rectangle, TK_MIN, TK_X);
             double x = system_get_symbol_value (&app->layout_system, str_data(&buffer));
@@ -318,9 +319,10 @@ uint64_t layout_rectangle_size (struct app_t *app, dvec2 size)
 
     str_free (&buffer);
 
-    struct rectangle_t *new_rect = mem_pool_push_struct (&app->pool, struct rectangle_t);
-    *new_rect = ZERO_INIT(struct rectangle_t);
+    struct entity_t *new_rect = mem_pool_push_struct (&app->pool, struct entity_t);
+    *new_rect = ZERO_INIT(struct entity_t);
     new_rect->id = id;
+    new_rect->type = TK_RECTANGLE;
     LINKED_LIST_PUSH (app->rectangles, new_rect);
 
     return id;
