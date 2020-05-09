@@ -124,6 +124,7 @@ bool get_user_feature (char *name, struct feature_t *feature)
     bool success = true;
     struct scanner_t _scnr = {0};
     struct scanner_t *scnr = &_scnr;
+    scnr->pos = name;
 
     bool type_found = false;
     for (int type_enum=0; type_enum<ARRAY_SIZE(entity_type_names); type_enum++) {
@@ -305,16 +306,16 @@ uint64_t layout_rectangle_size (struct app_t *app, dvec2 size)
     app->next_id++;
 
     string_t buffer = {0};
-    str_set_printf (&buffer, "%ld.min.x + %ld.width - %ld.max.x", id, id, id);
+    str_set_printf (&buffer, "%ld.min.x + %ld.size.x - %ld.max.x", id, id, id);
     solver_expr_equals_zero (&app->layout_system, str_data(&buffer));
 
-    str_set_printf (&buffer, "%ld.min.y + %ld.height - %ld.max.y", id, id, id);
+    str_set_printf (&buffer, "%ld.min.y + %ld.size.y - %ld.max.y", id, id, id);
     solver_expr_equals_zero (&app->layout_system, str_data(&buffer));
 
-    str_set_printf (&buffer, "%ld.width", id);
+    str_set_printf (&buffer, "%ld.size.x", id);
     solver_symbol_assign (&app->layout_system, str_data(&buffer), size.x);
 
-    str_set_printf (&buffer, "%ld.height", id);
+    str_set_printf (&buffer, "%ld.size.y", id);
     solver_symbol_assign (&app->layout_system, str_data(&buffer), size.y);
 
     str_free (&buffer);
@@ -338,11 +339,11 @@ void layout_add_rectangle_anchor (struct app_t *app, uint64_t id, char *anchor_n
         str_set_printf (&buffer, "%ld.min.x - %ld.b.x", id, id);
         solver_expr_equals_zero (&app->layout_system, str_data(&buffer));
 
-        str_set_printf (&buffer, "%ld.min.y + %ld.height - %ld.b.y", id, id, id);
+        str_set_printf (&buffer, "%ld.min.y + %ld.size.y - %ld.b.y", id, id, id);
         solver_expr_equals_zero (&app->layout_system, str_data(&buffer));
 
     } else if (strcmp (anchor_name, "d") == 0) {
-        str_set_printf (&buffer, "%ld.min.x + %ld.width - %ld.d.x", id, id, id);
+        str_set_printf (&buffer, "%ld.min.x + %ld.size.x - %ld.d.x", id, id, id);
         solver_expr_equals_zero (&app->layout_system, str_data(&buffer));
 
         str_set_printf (&buffer, "%ld.min.y - %ld.d.y", id, id);
@@ -459,15 +460,15 @@ void linked_rectangles (struct app_t *app)
 void linked_rectangles_system (struct linear_system_t *system)
 {
     // Rectangle 1
-    solver_expr_equals_zero (system, "rectangle_1.min.x + rectangle_1.width - rectangle_1.max.x");
-    solver_expr_equals_zero (system, "rectangle_1.min.y + rectangle_1.height - rectangle_1.max.y");
+    solver_expr_equals_zero (system, "rectangle_1.min.x + rectangle_1.size.x - rectangle_1.max.x");
+    solver_expr_equals_zero (system, "rectangle_1.min.y + rectangle_1.size.y - rectangle_1.max.y");
 
-    solver_symbol_assign (system, "rectangle_1.width", 90);
-    solver_symbol_assign (system, "rectangle_1.height", 20);
+    solver_symbol_assign (system, "rectangle_1.size.x", 90);
+    solver_symbol_assign (system, "rectangle_1.size.y", 20);
 
     // Link
     solver_expr_equals_zero (system, "rectangle_1.min.x - rectangle_1.b.x");
-    solver_expr_equals_zero (system, "rectangle_1.min.y + rectangle_1.height - rectangle_1.b.y");
+    solver_expr_equals_zero (system, "rectangle_1.min.y + rectangle_1.size.y - rectangle_1.b.y");
 
     solver_expr_equals_zero (system, "rectangle_1.b.x + link_1.d.x - rectangle_2.min.x");
     solver_expr_equals_zero (system, "rectangle_1.b.y + link_1.d.y - rectangle_2.min.y");
@@ -478,11 +479,11 @@ void linked_rectangles_system (struct linear_system_t *system)
     solver_symbol_assign (system, "link_1.d.y", 15);
 
     // Rectangle 2
-    solver_expr_equals_zero (system, "rectangle_2.min.x + rectangle_2.width - rectangle_2.max.x");
-    solver_expr_equals_zero (system, "rectangle_2.min.y + rectangle_2.height - rectangle_2.max.y");
+    solver_expr_equals_zero (system, "rectangle_2.min.x + rectangle_2.size.x - rectangle_2.max.x");
+    solver_expr_equals_zero (system, "rectangle_2.min.y + rectangle_2.size.y - rectangle_2.max.y");
 
-    solver_symbol_assign (system, "rectangle_2.width", 90);
-    solver_symbol_assign (system, "rectangle_2.height", 20);
+    solver_symbol_assign (system, "rectangle_2.size.x", 90);
+    solver_symbol_assign (system, "rectangle_2.size.y", 20);
 
     // Fix
     solver_symbol_assign (system, "rectangle_1.min.x", 100);
