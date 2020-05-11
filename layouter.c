@@ -457,8 +457,10 @@ void linked_rectangles (struct app_t *app)
     layout_fix (app, rectangle_1, "min", DVEC2(100, 100));
 }
 
-void linked_rectangles_system (struct linear_system_t *system)
+void linked_rectangles_system (struct app_t *app)
 {
+    struct linear_system_t *system = app->layout_system;
+
     // Rectangle 1
     solver_expr_equals_zero (system, "rectangle_1.min.x + rectangle_1.size.x - rectangle_1.max.x");
     solver_expr_equals_zero (system, "rectangle_1.min.y + rectangle_1.size.y - rectangle_1.max.y");
@@ -527,7 +529,7 @@ int main (int argc, char **argv)
     app.background_color = RGB(0.164, 0.203, 0.223);
     get_next_color (&app.rectangle_color);
 
-    sample (&app);
+    linked_rectangles_system (&app);
 
     string_t error = {0};
     bool success = solver_solve (&app.layout_system, &error);
