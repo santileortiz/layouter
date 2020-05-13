@@ -457,9 +457,9 @@ void linked_rectangles (struct app_t *app)
     layout_fix (app, rectangle_1, "min", DVEC2(100, 100));
 }
 
-void linked_rectangles_system (struct app_t *app)
+void linked_rectangles_system_floating (struct app_t *app)
 {
-    struct linear_system_t *system = app->layout_system;
+    struct linear_system_t *system = &app->layout_system;
 
     // Rectangle 1
     solver_expr_equals_zero (system, "rectangle_1.min.x + rectangle_1.size.x - rectangle_1.max.x");
@@ -486,13 +486,19 @@ void linked_rectangles_system (struct app_t *app)
 
     solver_symbol_assign (system, "rectangle_2.size.x", 90);
     solver_symbol_assign (system, "rectangle_2.size.y", 20);
+}
 
+void linked_rectangles_system (struct app_t *app)
+{
+    linked_rectangles_system_floating (app);
+
+    struct linear_system_t *system = &app->layout_system;
     // Fix
     solver_symbol_assign (system, "rectangle_1.min.x", 100);
     solver_symbol_assign (system, "rectangle_1.min.y", 100);
 }
 
-void sample (struct app_t *app)
+void sample (struct app_t *app, uint64_t *out_rectangle_1, uint64_t *out_rectangle_2)
 {
     uint64_t rectangle_1 = layout_rectangle_size (app, DVEC2(90, 20));
     uint64_t rectangle_2 = layout_rectangle_size (app, DVEC2(90, 20));
@@ -507,6 +513,37 @@ void sample (struct app_t *app)
     layout_link_d (app, rectangle_5, "d", rectangle_4, "min", DVEC2(10, 0));
 
     layout_fix (app, rectangle_1, "min", DVEC2(100, 100));
+
+    if (out_rectangle_1 != NULL) {
+        *out_rectangle_1 = rectangle_1;
+    }
+
+    if (out_rectangle_2 != NULL) {
+        *out_rectangle_2 = rectangle_2;
+    }
+}
+
+void mix_layout (struct app_t *app)
+{
+    linked_rectangles_system_floating (app);
+
+    uint64_t rectangle_1, rectangle_2;
+    sample (app, &rectangle_1, &rectangle_2);
+
+    struct linear_system_t *system = &app->layout_system;
+    string_t buffer = {0};
+    // Align rectangle with left side of top left rectangle
+    str_set_printf (&buffer, "%ld.min.x - rectangle_1.min.x", rectangle_1);
+    solver_expr_equals_zero (system, str_data(&buffer));
+
+    // Separate vertically rectangle from bottom left rectangle
+    str_set_printf (&buffer, "%ld.min.y + %ld.size.y - %ld.b.y", rectangle_2, rectangle_2, rectangle_2);
+    solver_expr_equals_zero (system, str_data(&buffer));
+    str_set_printf (&buffer, "%ld.b.y + link_2.d.y - rectangle_1.min.y", rectangle_2);
+    solver_expr_equals_zero (system, str_data(&buffer));
+
+    solver_symbol_assign (system, "link_2.d.y", 15);
+    str_free (&buffer);
 }
 
 int main (int argc, char **argv)
@@ -529,7 +566,7 @@ int main (int argc, char **argv)
     app.background_color = RGB(0.164, 0.203, 0.223);
     get_next_color (&app.rectangle_color);
 
-    linked_rectangles_system (&app);
+    mix_layout (&app);
 
     string_t error = {0};
     bool success = solver_solve (&app.layout_system, &error);
