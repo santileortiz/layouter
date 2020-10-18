@@ -40,7 +40,6 @@ struct linear_system_t {
     uint64_t last_id;
     struct expression_t *expressions;
 
-    struct symbol_t *solution;
     bool success;
 };
 
@@ -310,10 +309,13 @@ double system_get_symbol_value (struct linear_system_t *system, char *name)
     return symbol_definition->value;
 }
 
-bool solver_solve (struct linear_system_t *system, string_t *error)
+// This implementation of the solver works only if the system is solvable. Some
+// unsolvable systems may cause memory corruption and useless results. In
+// theory, this function can never fail if used correctly, we don't care about
+// error messages or even notifying something bad happened. If there is the
+// slightest chance of something going wrong DON'T USE THIS, use solver_solve().
+void solver_solve_unsafe (struct linear_system_t *system, string_t *error)
 {
-    bool success = true;
-
     uint64_t symbol_id_to_column[system->last_id];
     uint64_t column_to_symbol_id[system->last_id];
     int num_unassigned_symbols = 0;
@@ -422,6 +424,13 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
 
         // Perform back substitution
         {
+            // This assumes the resulting matrix in row echelon form has the
+            // following additional constraints:
+            //
+            //  - All leading coefficients are in a straight diagonal.
+            //  - The number of linearly independent equations equals the number
+            //    of unassigned symbols.
+            
             int k = n-2;
 
             // If there were linearly dependent equations in the beginning,
@@ -431,7 +440,7 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
 
             //str_cat_matrix (error, augmented_matrix, m, n);
 
-            while (h>=0 && n>=0) {
+            while (h>=0) {
                 if (augmented_matrix[n*h+k] == 0) {
                     k--;
 
@@ -449,6 +458,189 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
                 }
 
                 //str_cat_matrix (error, augmented_matrix, m, n);
+            }
+
+            //str_cat_matrix (error, augmented_matrix, m, n);
+        }
+
+        // Copy result back into symbol definitions as a solution
+        // NOTE: Only read the results of the first num_unassigned rows.
+        for (int i=0; i<num_unassigned_symbols; i++) {
+            struct symbol_definition_t *symbol_definition =
+                id_to_symbol_definition_get (&system->id_to_symbol_definition, column_to_symbol_id[col]);
+            symbol_definition->value = augmented_matrix[n*i + n-1];
+            symbol_definition->state = SYMBOL_SOLVED;
+        }
+
+        mem_pool_end_temporary_memory (mrkr);
+    }
+
+    system->success = true;
+}
+
+// This is a safe implementation of the solver that can generate partial
+// solutions if only part of the system is unsolvable. It's slower, but will
+// notify when an error happens (by returning false) and try to provide useful
+// error messages.
+bool solver_solve (struct linear_system_t *system, string_t *error)
+{
+    bool success = true;
+
+    uint64_t symbol_id_to_column[system->last_id];
+    uint64_t column_to_symbol_id[system->last_id];
+    int num_unassigned_symbols = 0;
+    BINARY_TREE_FOR (name_to_symbol_definition, &system->name_to_symbol_definition, curr_node) {
+        struct symbol_definition_t *symbol_definition = curr_node->value;
+        if (symbol_definition->state == SYMBOL_UNASSIGNED) {
+            symbol_id_to_column[symbol_definition->id] = num_unassigned_symbols;
+            column_to_symbol_id[num_unassigned_symbols] = symbol_definition->id;
+            num_unassigned_symbols++;
+        }
+    }
+
+    uint32_t num_equations = system_num_equations (system);
+
+    if (num_unassigned_symbols > 0) {
+        // Create the matrix
+        size_t m = num_equations;
+        size_t n = num_unassigned_symbols+1;
+
+        mem_pool_marker_t mrkr = mem_pool_begin_temporary_memory (&system->pool);
+        double *augmented_matrix = mem_pool_push_array(&system->pool, m*n, double);
+        memset (augmented_matrix, 0, m*n*sizeof(double));
+
+        // Populate the matrix with the data from the parsed expressions
+        int expression_idx = 0;
+        struct expression_t *curr_expression = system->expressions;
+        while (curr_expression != NULL) {
+            double constant = 0;
+
+            struct symbol_t *curr_symbol = curr_expression->symbols;
+            while (curr_symbol != NULL) {
+                if (curr_symbol->definition->state == SYMBOL_ASSIGNED) {
+                    if (curr_symbol->is_negative) {
+                        constant -= curr_symbol->definition->value;
+                    } else {
+                        constant += curr_symbol->definition->value;
+                    }
+
+                } else {
+                    if (curr_symbol->is_negative) {
+                        augmented_matrix[n*expression_idx + symbol_id_to_column[curr_symbol->definition->id]] = -1;
+                    } else {
+                        augmented_matrix[n*expression_idx + symbol_id_to_column[curr_symbol->definition->id]] = 1;
+                    }
+                }
+
+                curr_symbol = curr_symbol->next;
+            }
+
+            augmented_matrix[n*expression_idx+num_unassigned_symbols] = -constant;
+
+            expression_idx++;
+            curr_expression = curr_expression->next;
+        }
+
+        // Compute row echelon form of the matrix
+        {
+            // Pivot indices
+            size_t h = 0;
+            size_t k = 0;
+
+            str_cat_matrix (error, augmented_matrix, m, n);
+
+            while (h<(m-1) && k<(n-1)) {
+                // Find the row with the leading coefficient of maximum absolute
+                // value.
+                size_t m_i = 0; // Index where the maximum value was found
+                double maximum = 0;
+                {
+                    for (int i=h; i<m; i++) {
+                        if (fabs(augmented_matrix[n*i+k]) > maximum) {
+                            maximum = fabs(augmented_matrix[n*i+k]);
+                            m_i = i;
+                        }
+                    }
+                }
+
+                if (maximum == 0) {
+                    k++;
+
+                } else {
+                    // Swap the found row into row h.
+                    for (int j=0; j<n; j++) {
+                        double tmp = augmented_matrix[n*m_i+j];
+                        augmented_matrix[n*m_i+j] = augmented_matrix[n*h+j];
+                        augmented_matrix[n*h+j] = tmp;
+                    }
+
+                    // Operate all expressions below pivot to make 0 the k column
+                    for (int i=h+1; i<m; i++) {
+                        double c = augmented_matrix[n*i+k]/augmented_matrix[n*h+k];
+                        augmented_matrix[n*i+k] = 0;
+                        for (int j=k+1; j<n; j++) {
+                            augmented_matrix[n*i+j] -= augmented_matrix[n*h+j]*c;
+                        }
+                    }
+
+                    // Go to next pivot
+                    h++;
+                    k++;
+                }
+
+                //str_cat_matrix (error, augmented_matrix, m, n);
+            }
+        }
+
+        // Perform back substitution
+        {
+            // For each linearly dependent equation in the beginning, we will
+            // get a row with all zeroes at the end. For each equation that
+            // overconstrains the systemm, we get a row with all zeroes except
+            // for the constant term. Make h start at the last non zero row.
+            int h = m-1;
+            while (augmented_matrix[h*n + n - 1] == 0 && augmented_matrix[h*n + n - 2] == 0) {
+                h--;
+            }
+
+            str_cat_matrix (error, augmented_matrix, m, n);
+
+            while (h>=0) {
+                // Compute index of the leading coefficient. We don't assume
+                // leading coefficients are in a straight diagonal. This
+                // produces a partially solution, even in systems that are not
+                // fully solvable.
+                int k = 0;
+                while (augmented_matrix[h*n + k] == 0) {
+                    k++;
+
+                    // If we get a row of zeros in the middle, the matrix isn't in echelon form.
+                    assert (k < n - 1);
+                }
+
+                // Only do back substitution if the only non zero coefficient is
+                // the leading one. Otherwise, skip the row.
+                bool back_substitute = true;
+                for (int i=k+1; i < n - 1 && back_substitute; i++) {
+                    if (augmented_matrix[n*h+i] != 0) back_substitute = false;
+                }
+
+                if (!back_substitute) {
+                    h--;
+
+                } else {
+                    augmented_matrix[n*h+n-1] /= augmented_matrix[n*h+k];
+                    augmented_matrix[n*h+k] = 1;
+
+                    for (int i=h-1; i>=0; i--) {
+                        augmented_matrix[n*i+n-1] -= augmented_matrix[n*h+n-1]*augmented_matrix[n*i+k];
+                        augmented_matrix[n*i+k] = 0;
+                    }
+
+                    h--;
+                }
+
+                str_cat_matrix (error, augmented_matrix, m, n);
             }
         }
 
