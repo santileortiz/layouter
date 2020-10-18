@@ -402,38 +402,6 @@ void layout_fix (struct app_t *app,
     str_free (&buffer);
 }
 
-void print_system_solution (struct linear_system_t *system)
-{
-    int num_unassigned_symbols = 0;
-    {
-        printf ("Assigned:\n");
-        BINARY_TREE_FOR (name_to_symbol_definition, &system->name_to_symbol_definition, curr_node) {
-            struct symbol_definition_t *symbol_definition = curr_node->value;
-            if (symbol_definition->state == SYMBOL_ASSIGNED) {
-                printf ("%s = %.2f\n", str_data(&symbol_definition->name), symbol_definition->value);
-            } else {
-                num_unassigned_symbols++;
-            }
-        }
-        printf ("\n");
-    }
-
-    {
-        printf ("Solved:\n");
-        BINARY_TREE_FOR (name_to_symbol_definition, &system->name_to_symbol_definition, curr_node) {
-            struct symbol_definition_t *symbol_definition = curr_node->value;
-            if (symbol_definition->state == SYMBOL_SOLVED) {
-                printf ("%s = %.2f\n", str_data(&symbol_definition->name), symbol_definition->value);
-            }
-        }
-    }
-
-    printf ("\n");
-    printf ("Total symbols: %d\n", system_num_symbols (system));
-    printf ("Symbols to solve: %d\n", num_unassigned_symbols);
-    printf ("Equations: %d\n", system_num_equations (system));
-}
-
 void basic_rectangle (struct app_t *app)
 {
     uint64_t rectangle_1 = layout_rectangle_size (app, DVEC2(90, 20));
@@ -566,11 +534,12 @@ int main (int argc, char **argv)
     app.background_color = RGB(0.164, 0.203, 0.223);
     get_next_color (&app.rectangle_color);
 
-    mix_layout (&app);
+    linked_rectangles_system_floating (&app);
 
     string_t error = {0};
     bool success = solver_solve (&app.layout_system, &error);
-    print_system_solution (&app.layout_system);
+
+    solver_print_solution (&app.layout_system);
     if (!success) {
         printf ("\n");
         printf ("%s", str_data(&error));

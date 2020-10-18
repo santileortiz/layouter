@@ -19,6 +19,9 @@ def default ():
 def layouter ():
     ex ('gcc {C_FLAGS} -o bin/layouter layouter.c {GTK3_FLAGS} -lm')
 
+def linear_solver_tests ():
+    ex ('gcc {C_FLAGS} -o bin/linear_solver_tests linear_solver_tests.c -lm')
+
 if __name__ == "__main__":
     # Everything above this line will be executed for each TAB press.
     # If --get_completions is set, handle_tab_complete() calls exit().

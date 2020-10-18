@@ -517,3 +517,36 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
 
     return success;
 }
+
+void solver_print_solution (struct linear_system_t *system)
+{
+    int num_unassigned_symbols = 0;
+    {
+        printf ("Assigned:\n");
+        BINARY_TREE_FOR (name_to_symbol_definition, &system->name_to_symbol_definition, curr_node) {
+            struct symbol_definition_t *symbol_definition = curr_node->value;
+            if (symbol_definition->state == SYMBOL_ASSIGNED) {
+                printf ("%s = %.2f\n", str_data(&symbol_definition->name), symbol_definition->value);
+            } else {
+                num_unassigned_symbols++;
+            }
+        }
+        printf ("\n");
+    }
+
+    {
+        printf ("Solved:\n");
+        BINARY_TREE_FOR (name_to_symbol_definition, &system->name_to_symbol_definition, curr_node) {
+            struct symbol_definition_t *symbol_definition = curr_node->value;
+            if (symbol_definition->state == SYMBOL_SOLVED) {
+                printf ("%s = %.2f\n", str_data(&symbol_definition->name), symbol_definition->value);
+            }
+        }
+    }
+
+    printf ("\n");
+    printf ("Total symbols: %d\n", system_num_symbols (system));
+    printf ("Symbols to solve: %d\n", num_unassigned_symbols);
+    printf ("Equations: %d\n", system_num_equations (system));
+}
+
