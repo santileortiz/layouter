@@ -43,20 +43,18 @@ void simple_computation_print (struct linear_system_t *system)
     printf ("\n\n");
 }
 
-void solver_compute_solvability (struct linear_system_t *system)
-{
-}
-
 void solver_solve_and_print (struct linear_system_t *system)
 {
+    printf ("Simple solvability test:\n");
     simple_computation_print (system);
-
-    solver_compute_solvability (system);
 
     string_t err = {};
     solver_solve (system, &err);
     if (!system->success) {
-        printf ("%s\n", str_data(&err));
+        printf ("Solver: Error:\n");
+        printf ("%s", str_data(&err));
+    } else {
+        printf ("Solver: Success\n\n");
     }
     solver_print_solution (system);
     str_free (&err);
@@ -168,15 +166,19 @@ void overconstrained ()
     struct linear_system_t *system = &_system;
 
     solver_expr_equals_zero (system, "x1 + w1 - x2");
-    solver_expr_equals_zero (system, "x1 + w2 - x2");
-    solver_symbol_assign (system, "x2", 100);
+    solver_expr_equals_zero (system, "x2 + w2 - x3");
+    solver_expr_equals_zero (system, "x2 + w3 - x3");
+    solver_expr_equals_zero (system, "x3 + w4 - x4");
+    solver_symbol_assign (system, "x1", 100);
     solver_symbol_assign (system, "w1", 10);
     solver_symbol_assign (system, "w2", 20);
+    solver_symbol_assign (system, "w3", 30);
+    solver_symbol_assign (system, "w4", 40);
 
     solver_solve_and_print (system);
 }
 
 int main(int argc, char **argv)
 {
-    underconstrained_partial ();
+    linear_dependency ();
 }

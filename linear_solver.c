@@ -466,6 +466,15 @@ void solver_solve_unsafe (struct linear_system_t *system, string_t *error)
         // Copy result back into symbol definitions as a solution
         // NOTE: Only read the results of the first num_unassigned rows.
         for (int i=0; i<num_unassigned_symbols; i++) {
+            int col = -1;
+            for (int j=0; j<n-1; j++) {
+                if (augmented_matrix[n*i+j] != 0) {
+                    if (col == -1) {
+                        col = j;
+                    }
+                }
+            }
+
             struct symbol_definition_t *symbol_definition =
                 id_to_symbol_definition_get (&system->id_to_symbol_definition, column_to_symbol_id[col]);
             symbol_definition->value = augmented_matrix[n*i + n-1];
@@ -547,7 +556,7 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
             size_t h = 0;
             size_t k = 0;
 
-            str_cat_matrix (error, augmented_matrix, m, n);
+            //str_cat_matrix (error, augmented_matrix, m, n);
 
             while (h<(m-1) && k<(n-1)) {
                 // Find the row with the leading coefficient of maximum absolute
@@ -576,10 +585,38 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
 
                     // Operate all expressions below pivot to make 0 the k column
                     for (int i=h+1; i<m; i++) {
+                        // We want to know if a row becomes zero except for the
+                        // constant coefficient, this means the symbol
+                        // represented by the pivot's column was
+                        // overconstrained. Store if this symbol was already
+                        // zero, and check if after the update it becomes a zero
+                        // row except for the element in the last column.
+                        //
+                        // TODO: We really can't know the specific
+                        // overconstrained symbol, it can be any one in that
+                        // connected component. We should mark the whole
+                        // connected component as overconstrained. We can,
+                        // however, keep track of the row positions and compute
+                        // which expression couldn't be satisfied.
+                        bool was_zero = augmented_matrix[n*i+k] == 0;
+                        bool is_overconstrained = true;
+
                         double c = augmented_matrix[n*i+k]/augmented_matrix[n*h+k];
                         augmented_matrix[n*i+k] = 0;
                         for (int j=k+1; j<n; j++) {
                             augmented_matrix[n*i+j] -= augmented_matrix[n*h+j]*c;
+
+                            if (j < n-1) {
+                                is_overconstrained &= (augmented_matrix[n*i+j] == 0);
+                            } else {
+                                is_overconstrained &= (augmented_matrix[n*i+j] != 0);
+                            }
+                        }
+
+                        if (is_overconstrained && !was_zero) {
+                            struct symbol_definition_t *symbol = id_to_symbol_definition_get(&system->id_to_symbol_definition, column_to_symbol_id[k]);
+                            str_cat_printf (error, "Overconstrained symbol '%s'\n", str_data(&symbol->name));
+                            success = false;
                         }
                     }
 
@@ -603,7 +640,7 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
                 h--;
             }
 
-            str_cat_matrix (error, augmented_matrix, m, n);
+            //str_cat_matrix (error, augmented_matrix, m, n);
 
             while (h>=0) {
                 // Compute index of the leading coefficient. We don't assume
@@ -615,7 +652,7 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
                     k++;
 
                     // If we get a row of zeros in the middle, the matrix isn't in echelon form.
-                    assert (k < n - 1);
+                    //assert (k < n - 1);
                 }
 
                 // Only do back substitution if the only non zero coefficient is
@@ -640,7 +677,7 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
                     h--;
                 }
 
-                str_cat_matrix (error, augmented_matrix, m, n);
+                //str_cat_matrix (error, augmented_matrix, m, n);
             }
         }
 
@@ -658,33 +695,29 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
                 }
             }
 
-            // TODO: I'm sure some of these can't even happen, but I have to
-            // think which ones aren't possible.
-            if (count > 1) {
-                str_cat_printf (error, "Resulting expression (m=%d) has more than 1 variable\n", col);
-                success = false;
-
-            } else if (count == 0) {
-                // I don't think this can happen because all linearly dependant
-                // equations are left as zeros rows at the end, we don't iterate
-                // over them.
-                str_cat_printf (error, "Resulting expression (m=%d) has no variable\n", col);
-                success = false;
-
-            } else if (augmented_matrix[n*i+col] != 1) {
-                str_cat_printf (error, "Resulting expression (m=%d) has variable with factor different than 1\n", col);
-                success = false;
-
-            } else {
+            if (count == 1 && augmented_matrix[n*i+col] == 1) {
                 struct symbol_definition_t *symbol_definition =
                     id_to_symbol_definition_get (&system->id_to_symbol_definition, column_to_symbol_id[col]);
                 symbol_definition->value = augmented_matrix[n*i + n-1];
                 symbol_definition->state = SYMBOL_SOLVED;
+
+            } else {
+                // TODO: Store the list of unsolved symbols somewhere. As with
+                // overconstrained symbols, we really only get information about
+                // the connected component.
             }
         }
 
-        // TODO: Check that all rows left are full of 0's. Otherwise, I think it
-        // means the system was overdetermined.
+        // Check that all symbols are either assigned or solved
+        {
+            BINARY_TREE_FOR (name_to_symbol_definition, &system->name_to_symbol_definition, curr_node) {
+                struct symbol_definition_t *symbol_definition = curr_node->value;
+                if (symbol_definition->state == SYMBOL_UNASSIGNED) {
+                    str_cat_printf (error, "Unsolved symbol '%s'\n", str_data(&symbol_definition->name));
+                    success = false;
+                }
+            }
+        }
 
         if (!success) {
             str_cat_c (error, "\n");
@@ -692,17 +725,6 @@ bool solver_solve (struct linear_system_t *system, string_t *error)
         }
 
         mem_pool_end_temporary_memory (mrkr);
-    }
-
-    // Check that all symbols are either assigned or solved
-    {
-        BINARY_TREE_FOR (name_to_symbol_definition, &system->name_to_symbol_definition, curr_node) {
-            struct symbol_definition_t *symbol_definition = curr_node->value;
-            if (symbol_definition->state == SYMBOL_UNASSIGNED) {
-                str_cat_printf (error, "Unsolved symbol '%s'\n", str_data(&symbol_definition->name));
-                success = false;
-            }
-        }
     }
 
     system->success = success;

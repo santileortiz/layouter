@@ -410,8 +410,6 @@ void basic_rectangle (struct app_t *app)
 
 void floating_rectangle (struct app_t *app)
 {
-    // FIXME: This caused an invalid pointer error in free() when restoring the
-    // temporary memory used for the linear system matrix.
     uint64_t rectangle_1 = layout_rectangle_size (app, DVEC2(90, 20));
     layout_rectangle_size (app, DVEC2(90, 20));
     layout_fix (app, rectangle_1, "min", DVEC2(100, 100));
@@ -443,8 +441,6 @@ void linked_rectangles_system_floating (struct app_t *app)
     solver_expr_equals_zero (system, "rectangle_1.b.x + link_1.d.x - rectangle_2.min.x");
     solver_expr_equals_zero (system, "rectangle_1.b.y + link_1.d.y - rectangle_2.min.y");
 
-    // FIXME: When these assignments are missing the linear system throws
-    // garbage. We should show better errors.
     solver_symbol_assign (system, "link_1.d.x", 10);
     solver_symbol_assign (system, "link_1.d.y", 15);
 
@@ -534,7 +530,7 @@ int main (int argc, char **argv)
     app.background_color = RGB(0.164, 0.203, 0.223);
     get_next_color (&app.rectangle_color);
 
-    linked_rectangles_system_floating (&app);
+    mix_layout (&app);
 
     string_t error = {0};
     bool success = solver_solve (&app.layout_system, &error);
