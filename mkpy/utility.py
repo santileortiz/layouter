@@ -1,4 +1,4 @@
-import sys, subprocess, os, ast, shutil, platform
+import sys, subprocess, os, ast, shutil, platform, json, pickle
 
 import importlib.util, inspect, pathlib, filecmp
 
@@ -121,6 +121,8 @@ def recommended_opt (s):
 
 builtin_completions = []
 cli_completions = {}
+cli_bool_options = set()
+cli_arg_options = set()
 def handle_tab_complete ():
     """
     Handles command line options used by tab completion.
@@ -132,7 +134,7 @@ def handle_tab_complete ():
     if not check_completions ():
         if get_cli_bool_opt('--install_completions'):
             print ('Installing tab completions...')
-            ex ('cp mkpy/pymk.py {}'.format(completion_script, get_completions_path()))
+            ex ('cp mkpy/pymk.py {}'.format(get_completions_path()))
             exit ()
 
         else:
@@ -194,6 +196,9 @@ def get_cli_arg_opt (opts, values=None, unique_option=False, default=None):
     """
     global cli_completions
 
+    global cli_arg_options
+    cli_arg_options.add(opts)
+
     res = None
     i = 1
     if values != None: has_argument = True
@@ -241,6 +246,9 @@ def get_cli_bool_opt(opts, has_argument=False, unique_option=False):
     """
     global cli_completions
 
+    global cli_bool_options
+    cli_bool_options.add(opts)
+
     res = None
     i = 1
     while i<len(sys.argv):
@@ -255,25 +263,60 @@ def get_cli_bool_opt(opts, has_argument=False, unique_option=False):
 
     return res
 
-def get_cli_rest ():
+# Deprecated
+# This implementation includes the function's name when there is no option
+# starting with '-', but when there is, then the function name is not returned.
+# This is broken because now callers have to use diferent indices in the array
+# depending on the presence of - options. Instead assume this will always be
+# called from within a snip and trim the first value by default. That's what
+# the new get_cli_no_opt() does.
+#
+#def get_cli_rest ():
+#    """
+#    Returns an array of all argv values that are after options starting with '-'.
+#    """
+#    i = 1;
+#    while i<len(sys.argv):
+#        if sys.argv[i].startswith ('-'):
+#            if len(sys.argv) > i+1 and not sys.argv[i+1].startswith('-'):
+#                i = i+1
+#        else:
+#            return sys.argv[i:]
+#        i = i+1
+#    return None
+
+def get_cli_no_opt ():
     """
-    Returns an array of all argv values that are after options starting with '-'.
+    Returns an array of all argv values that are after options processed by
+    get_cli_arg_opt() or get_cli_bool_opt().
+
+    This assumes the calling command line is always something like
+
+    ./pymk.py <snip-name> [OPTS] [REST]
+
+    The returned array will contain REST as a list. Don't use this if there is
+    any chance the calling command can be different (for example a missing snip
+    name). I have yet to come accross a use case where this could be an issue.
     """
-    i = 1;
+    global cli_arg_options
+    global cli_bool_options
+
+    i = 2;
     while i<len(sys.argv):
         if sys.argv[i].startswith ('-'):
-            if len(sys.argv) > i+1 and not sys.argv[i+1].startswith('-'):
+            if sys.argv[i] in cli_arg_options and len(sys.argv) > i+1:
+                i = i+2
+            elif sys.argv[i] in cli_bool_options and len(sys.argv) > i:
                 i = i+1
         else:
             return sys.argv[i:]
-        i = i+1
     return None
 
-def err (string):
-    print ('\033[1m\033[91m{}\033[0m'.format(string))
+def err (string, **kwargs):
+    print ('\033[1m\033[91m{}\033[0m'.format(string), **kwargs)
 
-def ok (string):
-    print ('\033[1m\033[92m{}\033[0m'.format(string))
+def ok (string, **kwargs):
+    print ('\033[1m\033[92m{}\033[0m'.format(string), **kwargs)
 
 def get_user_str_vars ():
     """
@@ -366,6 +409,8 @@ def ex (cmd, no_stdout=False, ret_stdout=False, echo=True):
             pass
         return result
 
+# TODO: Rename this because it has the same name as one of the default logging
+# functions in python.
 def info (s):
     # The following code can be used to se available colors
     #for i in range (8):
@@ -385,6 +430,30 @@ def warn (s):
     color = '\033[1;33m\033[K'
     default_color = '\033[m\033[K'
     print (color+s+default_color)
+
+def pickle_load(fname):
+    with open (fname, 'rb') as f:
+        return pickle.load(f)
+
+def pickle_dump(obj, fname):
+    with open (fname, 'wb') as f:
+        pickle.dump(obj, f)
+
+def py_literal_load(fname):
+    with open (fname, 'r') as f:
+        return ast.literal_eval(f.read())
+
+def py_literal_dump(obj, fname):
+    with open (fname, 'w') as f:
+        f.write(str(obj))
+
+def json_load(fname):
+    with open (fname, 'r') as f:
+        return json.load(f)
+
+def json_dump(obj, fname):
+    with open (fname, 'w') as f:
+        return json.dump(obj, f)
 
 def get_snip ():
     if len(sys.argv) == 1:
@@ -583,6 +652,9 @@ def pers_func (name, func, arg):
     # to wrap arg into a list.
     return pers_func_f (name, func, [arg])
 
+def path_isdir (path_s):
+    return os.path.isdir(path_s.format(**get_user_str_vars()))
+
 def path_resolve (path_s):
     return os.path.expanduser(path_s.format(**get_user_str_vars()))
 
@@ -777,8 +849,8 @@ def get_pkg_manager_type ():
                     return True
                 elif i == os_id_like:
                     return True
-                else:
-                    return False
+
+            return False
 
         deb_oses = ['elementary', 'ubuntu', 'debian']
         rpm_oses = ['fedora']
@@ -810,7 +882,7 @@ def prune_pkg_list (pkg_list):
     a = set()
     b = set(pkg_list)
 
-    while b:
+    while b and find_deps != None:
         dep = b.pop ()
         curr_deps = find_deps (dep)
         #print ('Pruning {}: {}\n'.format(dep, " ".join(curr_deps)))
@@ -825,11 +897,15 @@ def prune_pkg_list (pkg_list):
                 b.remove (d)
         a.add (dep)
 
-        if len(removed) > 1:
+        if len(removed) > 0:
             print ('Removes: ' + ' '.join(removed))
         else:
             print ()
+
+    if find_deps == None:
+        print (f'No find_deps() function, trying to use package manager type: {pkg_manager_type}')
     print ()
+
     return list (a)
 
 def gcc_used_system_includes (cmd):
@@ -885,9 +961,31 @@ def file_is_elf (fname):
 def file_exists (fname):
     return pathlib.Path(fname).exists()
 
+g_skip_snip_cache = []
+def no_cache(f):
+    """"
+    Decorator that makes the decorated snip function not be stored as the last
+    called one. Only useful when using a default snip that reads the
+    'last_snip' key in the cache.
+    """
+
+    # TODO: I like this solution better than the argument being passed to
+    # pymk_default() which is an alternative implementation I used before.
+    # The main reason I like this more, is that we don't repeat the function's
+    # name in multiple places, so changing the function's name doesn't break
+    # the behavior, on the other hand passing the array to pymk_default() would
+    # break if the function name changes and it wasn't updated in the passed
+    # array.
+    global g_skip_snip_cache
+    g_skip_snip_cache.append (f.__name__)
+    return f
+
 def pymk_default (skip_snip_cache=[]):
     global ex_cmds
     t = get_snip()
+
+    global g_skip_snip_cache
+    skip_snip_cache += g_skip_snip_cache
 
     if '--get_run_deps' in builtin_completions and get_cli_bool_opt ('--get_run_deps'):
         # Look for all gcc commands that generate an executable and get the
@@ -994,4 +1092,49 @@ def pymk_default (skip_snip_cache=[]):
         call_user_function (t)
         if t != 'default' and t != 'install' and t not in skip_snip_cache:
             store ('last_snip', value=t)
+
+##########################
+# Custom status logger API
+#
+# This is a simpler logging API than the default logger that allows to easily
+# get the result of a single call.
+_level_enum = {
+    'ERROR': 1,
+    'WARNING': 2,
+    'INFO': 3,
+    'DEBUG': 4
+}
+_level_to_name = {}
+
+# Create variables for the level enum above and a dictionary to get the names
+_g = globals()
+for varname, value in _level_enum.items():
+    _g[varname] = value
+    _g['_level_to_name'][value] = varname
+
+class StatusEvent():
+    def __init__(self, message, level=INFO):
+        self.message = message
+        self.level = level
+
+class Status():
+    def __init__(self, level=WARNING):
+        self.events = []
+        self.level = level
+
+    def __str__(self):
+        events_str_arr = [f'{_level_to_name[e.level]}: {e.message}' for e in self.events if e.level <= self.level]
+        return '\n'.join(events_str_arr)
+
+def log_clsr(level_value):
+    def log_generic(status, message, echo=False):
+        if echo:
+            print (message)
+
+        if status != None and status.level >= level_value:
+            status.events.append (StatusEvent(message, level=level_value))
+    return log_generic
+
+for level_name, level_value in _level_enum.items():
+    _g[f'log_{level_name.lower()}'] = log_clsr(level_value)
 
