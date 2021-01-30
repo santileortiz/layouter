@@ -1,5 +1,5 @@
 /*
- * Copiright (C) 2020 Santiago León O.
+ * Copyright (C) 2020 Santiago León O.
  */
 
 #define _GNU_SOURCE // Used to enable strcasestr()

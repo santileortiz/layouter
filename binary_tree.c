@@ -1,5 +1,5 @@
 /*
- * Copiright (C) 2019 Santiago León O.
+ * Copyright (C) 2019 Santiago León O.
  */
 
 #define BINARY_TREE_NEW(PREFIX,KEY_TYPE,VALUE_TYPE,CMP_A_TO_B)                                           \

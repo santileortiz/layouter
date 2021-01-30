@@ -1,5 +1,5 @@
 /*
- * Copiright (C) 2019 Santiago León O.
+ * Copyright (C) 2019 Santiago León O.
  */
 
 struct scanner_t {
